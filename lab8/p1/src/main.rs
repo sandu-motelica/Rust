@@ -8,7 +8,7 @@ fn main() -> Result<(), std::io::Error> {
     // numar frecventele cuvintelor
     continut_fisier
         .split(|c: char| !c.is_alphanumeric()) // furnizez cuvintele
-        .filter(|cuvant| !cuvant.is_empty()) //
+        .filter(|cuvant| !cuvant.is_empty()) // elimin cuvintele goale
         .for_each(|cuvant| {
             *frecvente_cuvinte.entry(cuvant.to_lowercase()).or_insert(0) += 1;
         });
