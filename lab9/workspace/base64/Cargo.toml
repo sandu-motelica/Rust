@@ -1,0 +1,14 @@
+[package]
+name = "base64"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[lib]
+name = "base64"
+path = "src/lib.rs"
+
+# [[test]]
+# name = "test_codifica_base64"
+# path = "src/lib.rs"
