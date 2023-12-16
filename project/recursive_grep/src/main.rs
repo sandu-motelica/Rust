@@ -1,9 +1,15 @@
+use std::env;
+use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
 
-fn cautare_subsir(continut_fisier: String, sir_cautat: &str) -> bool {
+fn cautare_fisier(path: &Path, sir_cautat: &str) -> io::Result<bool> {
+    let mut file = File::open(path)?;
+    let mut continut_fisier = String::new();
+    file.read_to_string(&mut continut_fisier)?;
+
     // Folosesc alg Boyer-Moore pentru cautare
     let mut raspuns = false;
     let m = sir_cautat.len();
@@ -29,23 +35,24 @@ fn cautare_subsir(continut_fisier: String, sir_cautat: &str) -> bool {
         }
 
         if continut_fisier.as_bytes()[k] == sir_cautat.as_bytes()[j] && j == 0 {
-            let index = k - continut_fisier[..k].rfind('\n').unwrap_or(0);
+            if !raspuns {
+                // println!("Fisierul: {:?}", path.file_name().unwrap_or_default());
+                println!("{}", path.display());
+            }
             let linie = continut_fisier[..k].matches('\n').count() + 1;
-            println!("Gasit la linia {}, indexul {}.", linie, index);
+
+            if let Some(continut_linie) = continut_fisier.lines().nth(linie - 1) {
+                println!("{}: {}", linie, continut_linie);
+            } else {
+                println!("Indexul liniei depășește numărul total de linii.");
+            }
+
             raspuns = true;
         }
 
         i += skip[continut_fisier.as_bytes()[i] as usize];
     }
-    raspuns
-}
-
-fn cautare_fisier(path: &Path, sir: &str) -> io::Result<bool> {
-    let mut file = File::open(path)?;
-    let mut continut = String::new();
-    file.read_to_string(&mut continut)?;
-    let rezultat = cautare_subsir(continut, sir);
-    Ok(rezultat)
+    Ok(raspuns)
 }
 
 fn parcurgere_recursiva(director: &Path, sir: &str, rezultat: &mut bool) {
@@ -56,7 +63,20 @@ fn parcurgere_recursiva(director: &Path, sir: &str, rezultat: &mut bool) {
                 // Dacă este un fișier, efectuăm căutarea în fișier
                 match cautare_fisier(&path, sir) {
                     Ok(true) => *rezultat = true,
-                    Err(e) => eprintln!("Eroare în timpul citirii fișierului: {}", e),
+                    Err(e) => {
+                        if let Some(eroare) = e.source() {
+                            if eroare.is::<std::str::Utf8Error>() {
+                                // Ignorăm fișierele care nu sunt în format UTF-8 valid
+                                continue;
+                            } else {
+                                eprintln!(
+                                    "Eroare în timpul citirii fișierului {}: {}",
+                                    path.display(),
+                                    e
+                                );
+                            }
+                        }
+                    }
                     _ => {}
                 }
             } else {
@@ -68,9 +88,16 @@ fn parcurgere_recursiva(director: &Path, sir: &str, rezultat: &mut bool) {
 }
 
 fn main() {
-    let director = Path::new("D:\\Exemplu");
-    let sir_cautat = "Today";
+    let argumente: Vec<String> = env::args().collect();
+    if argumente.len() < 3 {
+        eprintln!("Format: {} <adresa_directot> <sir_cautat>", argumente[0]);
+        std::process::exit(1);
+    }
     let mut rezultat = false;
+
+    let director = Path::new(&argumente[1]);
+    let sir_cautat = &argumente[2];
+    println!("Adresa: {}, sirul {}", director.display(), sir_cautat);
     parcurgere_recursiva(director, sir_cautat, &mut rezultat);
     if !rezultat {
         println!("Nu s-a gasit!");
