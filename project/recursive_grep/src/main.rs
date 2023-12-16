@@ -5,7 +5,13 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
 
-fn cautare_fisier(path: &Path, sir_cautat: &str, count: bool, ignore: bool) -> io::Result<bool> {
+fn cautare_fisier(
+    path: &Path,
+    sir_cautat: &str,
+    count: bool,
+    ignore: bool,
+    max_linii: usize,
+) -> io::Result<bool> {
     let mut file = File::open(path)?;
     let mut continut_fisier = String::new();
     file.read_to_string(&mut continut_fisier)?;
@@ -20,12 +26,9 @@ fn cautare_fisier(path: &Path, sir_cautat: &str, count: bool, ignore: bool) -> i
     } else {
         sir = sir_cautat.to_string();
     }
-
     let mut raspuns = false;
     let m = sir.len();
     let mut skip = vec![m; 256];
-
-    let n = continut_fisier.len();
 
     let mut i = 0;
     while i < m - 1 {
@@ -33,41 +36,44 @@ fn cautare_fisier(path: &Path, sir_cautat: &str, count: bool, ignore: bool) -> i
         skip[caracter as usize] = m - 1 - i;
         i += 1;
     }
-
-    let mut i = m - 1;
-    while i < n {
-        let mut j = m - 1;
-        let mut k = i;
-
-        while j > 0 && continut_fisier.as_bytes()[k] == sir.as_bytes()[j] {
-            j -= 1;
-            k -= 1;
+    for (linie, continut_linie) in continut_fisier.lines().enumerate() {
+        // let continut_linie = clinie?;
+        if max_linii < linie + 1 {
+            break;
         }
-
-        if continut_fisier.as_bytes()[k] == sir.as_bytes()[j] && j == 0 {
-            if !raspuns {
-                // println!("Fisierul: {:?}", path.file_name().unwrap_or_default());
-                println!("{}", path.display());
+        let n = continut_linie.len();
+        let mut i = m - 1;
+        while i < n {
+            let mut j = m - 1;
+            let mut k = i;
+            while j > 0 && continut_linie.as_bytes()[k] == sir.as_bytes()[j] {
+                j -= 1;
+                k -= 1;
             }
-            if count {
-                counter += 1;
-            } else {
-                let linie = continut_fisier[..k].matches('\n').count() + 1;
 
-                if let Some(continut_linie) = copie_continut.lines().nth(linie - 1) {
-                    println!("{}: {}", linie, continut_linie);
+            if continut_linie.as_bytes()[k] == sir.as_bytes()[j] && j == 0 {
+                if !raspuns {
+                    println!("{}", path.display());
+                    raspuns = true;
+                }
+                if count {
+                    counter += 1;
+                } else if ignore {
+                    if let Some(continut_linie) = copie_continut.lines().nth(linie) {
+                        println!("{}: {}", linie + 1, continut_linie);
+                    } else {
+                        println!("Indexul liniei depășește numărul total de linii.");
+                    }
                 } else {
-                    println!("Indexul liniei depășește numărul total de linii.");
+                    println!("{}: {}", linie + 1, continut_linie);
                 }
             }
 
-            raspuns = true;
+            i += skip[continut_linie.as_bytes()[i] as usize];
         }
-
-        i += skip[continut_fisier.as_bytes()[i] as usize];
     }
     if counter > 0 {
-        println!("{} coincidente", counter);
+        println!("{}", counter);
     }
     Ok(raspuns)
 }
@@ -78,13 +84,14 @@ fn parcurgere_recursiva(
     rezultat: &mut bool,
     count: bool,
     ignore: bool,
+    max_linii: usize,
 ) {
     if let Ok(intrari) = fs::read_dir(director) {
         for e in intrari.flatten() {
             let path = e.path();
             if !path.is_dir() {
                 // Dacă este un fișier, efectuăm căutarea în fișier
-                match cautare_fisier(&path, sir, count, ignore) {
+                match cautare_fisier(&path, sir, count, ignore, max_linii) {
                     Ok(true) => *rezultat = true,
                     Err(e) => {
                         if let Some(eroare) = e.source() {
@@ -104,7 +111,7 @@ fn parcurgere_recursiva(
                 }
             } else {
                 // Dacă este un director, apelăm recursiv funcția pe acel director
-                parcurgere_recursiva(&path, sir, rezultat, count, ignore);
+                parcurgere_recursiva(&path, sir, rezultat, count, ignore, max_linii);
             }
         }
     }
@@ -120,23 +127,47 @@ fn main() {
 
     let director = Path::new(&argumente[1]);
     let sir_cautat = &argumente[2];
+    let mut max_linii = usize::MAX;
     let mut count = false;
     let mut ignore = false;
 
-    let optiuni: Vec<String> = (argumente[3..]).to_vec();
     // println!("Adresa: {}, sirul {}", director.display(), sir_cautat);
-    for optiune in optiuni {
+    let mut i = 3;
+    while i < argumente.len() {
+        let optiune = &argumente[i];
         match optiune.as_str() {
             "-count" => count = true,
             "-ignore" => ignore = true,
+            "-max" => {
+                i += 1;
+                if i < argumente.len() {
+                    if let Ok(numar) = argumente[i].parse::<usize>() {
+                        max_linii = numar;
+                    } else {
+                        eprintln!("Valoarea de dupa -max nu este un numar.\nFormat acceptat: {} <adresa_directot> <sir_cautat> [-count] [-ignore] [-max : numarul maxim de linii analizate]",argumente[0]);
+                        std::process::exit(2);
+                    }
+                } else {
+                    eprintln!("Format necunoscut! Nu este precizat numarul de linii dupa argumentul '-max'.");
+                    std::process::exit(3);
+                }
+            }
             _ => {
-                eprintln!("Format: {} <adresa_directot> <sir_cautat> [-count] [-ignore] [-max:numarul maxim de linii analizate]", argumente[0]);
+                eprintln!("Format acceptat: {} <adresa_directot> <sir_cautat> [-count] [-ignore] [-max : numarul maxim de linii analizate]", argumente[0]);
                 std::process::exit(1);
             }
         }
+        i += 1;
     }
-
-    parcurgere_recursiva(director, sir_cautat, &mut rezultat, count, ignore);
+    // println!("{max_linii}");
+    parcurgere_recursiva(
+        director,
+        sir_cautat,
+        &mut rezultat,
+        count,
+        ignore,
+        max_linii,
+    );
     if !rezultat {
         println!("Nu s-a gasit!");
     }
