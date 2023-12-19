@@ -6,114 +6,19 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::Path;
 
-fn cautare_fisier(
-    path: &Path,
-    sir_cautat: &str,
-    count: bool,
-    ignore: bool,
-    max_linii: usize,
-    regex: bool,
-) -> io::Result<bool> {
-    let mut file = File::open(path)?;
-    let mut continut_fisier = String::new();
-    file.read_to_string(&mut continut_fisier)?;
+const LUNGIME_MAX_LINIE: usize = 120;
+const JUM_LUNGIME: usize = LUNGIME_MAX_LINIE / 2;
 
-    // Folosesc alg Boyer-Moore pentru cautare
-    let mut counter = 0;
-    let copie_continut = continut_fisier.clone(); // fac o copie pt a afisa continult original in cazul in care ignore == true
-    let sir;
-
-    if ignore {
-        sir = sir_cautat.to_lowercase();
-        continut_fisier = continut_fisier.to_lowercase();
-    } else {
-        sir = sir_cautat.to_string();
-    }
-
-    let mut raspuns = false;
-
-    if regex {
-        let sir_regex = match Regex::new(&sir) {
-            Ok(regex) => regex,
-            Err(err) => {
-                eprintln!("Eroare la compilarea regex: {}", err);
-                return Ok(false);
-            }
-        };
-        for (linie, continut_linie) in continut_fisier.lines().enumerate() {
-            if max_linii < linie + 1 {
-                break;
-            }
-            if sir_regex.is_match(continut_linie) {
-                if !raspuns {
-                    println!("{}", path.display());
-                    raspuns = true;
-                }
-                //println!("Gasit cu regex: {}", sir_regex);
-                if count {
-                    counter += 1;
-                } else if ignore {
-                    if let Some(continut_linie) = copie_continut.lines().nth(linie) {
-                        println!("{}: {}", linie + 1, continut_linie);
-                    } else {
-                        println!("Indexul liniei depaseste numarul total de linii.");
-                    }
-                } else {
-                    println!("{}: {}", linie + 1, continut_linie);
-                }
-            }
-        }
-    } else {
-        let m = sir.len();
-        let mut skip = vec![m; 256];
-
-        let mut i = 0;
-        while i < m - 1 {
-            let caracter = sir.as_bytes()[i];
-            skip[caracter as usize] = m - 1 - i;
-            i += 1;
-        }
-        for (linie, continut_linie) in continut_fisier.lines().enumerate() {
-            // let continut_linie = clinie?;
-            if max_linii < linie + 1 {
-                break;
-            }
-            let n = continut_linie.len();
-            let mut i = m - 1;
-            while i < n {
-                let mut j = m - 1;
-                let mut k = i;
-                while j > 0 && continut_linie.as_bytes()[k] == sir.as_bytes()[j] {
-                    j -= 1;
-                    k -= 1;
-                }
-
-                if continut_linie.as_bytes()[k] == sir.as_bytes()[j] && j == 0 {
-                    if !raspuns {
-                        println!("{}", path.display());
-                        raspuns = true;
-                    }
-                    if count {
-                        counter += 1;
-                    } else if ignore {
-                        if let Some(continut_linie) = copie_continut.lines().nth(linie) {
-                            println!("{}: {}", linie + 1, continut_linie);
-                        } else {
-                            println!("Indexul liniei depășește numărul total de linii.");
-                        }
-                    } else {
-                        println!("{}: {}", linie + 1, continut_linie);
-                    }
-                }
-
-                i += skip[continut_linie.as_bytes()[i] as usize];
-            }
-        }
-    }
-    if counter > 0 {
-        println!("{}", counter);
-    }
-    Ok(raspuns)
+fn ajutor() {
+    println!("Utilizare: nume_program <adresa_director/fisier> <sir_cautat> [-count] [-ignore] [-max numarul maxim de linii analizate] [-regex]");
+    println!("Argumente:");
+    println!("  -count           : Afiseaza doar numarul de aparitii per fisier.");
+    println!(
+        "  -ignore          : Ignora distinctia dintre majuscule si minuscule in timpul cautarii."
+    );
+    println!("  -max numar_linii : Seteaza numarul maxim de linii analizate.");
+    println!("  -regex           : Activeaza cautarea cu expresii regulate.");
+    println!("   help            : Afiseaza aceasta informatie.");
 }
 
 fn parcurgere_recursiva(
@@ -129,49 +34,234 @@ fn parcurgere_recursiva(
         for e in intrari.flatten() {
             let path = e.path();
             if !path.is_dir() {
-                // Dacă este un fișier, efectuăm căutarea în fișier
+                // Daca este un fisier, efectuam cautarea
                 match cautare_fisier(&path, sir, count, ignore, max_linii, regex) {
                     Ok(true) => *rezultat = true,
                     Err(e) => {
                         if let Some(eroare) = e.source() {
                             if eroare.is::<std::str::Utf8Error>() {
-                                // Ignorăm fișierele care nu sunt în format UTF-8 valid
+                                // Se ignora fisierele care nu sunt in format UTF-8 valid
                                 continue;
                             } else {
                                 eprintln!(
-                                    "Eroare în timpul citirii fișierului {}: {}",
+                                    "Eroare în timpul citirii fisierului {}: {}",
                                     path.display(),
                                     e
                                 );
                             }
                         }
                     }
-                    _ => {}
+                    Ok(false) => {}
                 }
             } else {
-                // Dacă este un director, apelăm recursiv funcția pe acel director
+                // Dacă este un director, apelăm recursiv functia pe acel director
                 parcurgere_recursiva(&path, sir, rezultat, count, ignore, max_linii, regex);
             }
         }
+    } else {
+        match cautare_fisier(director, sir, count, ignore, max_linii, regex) {
+            Ok(true) => *rezultat = true,
+            Err(e) => {
+                if let Some(eroare) = e.source() {
+                    if eroare.is::<std::str::Utf8Error>() {
+                        // Se ignora fisierele care nu sunt in format UTF-8 valid
+                    } else {
+                        eprintln!(
+                            "Eroare în timpul citirii fișierului {}: {}",
+                            director.display(),
+                            e
+                        );
+                    }
+                }
+            }
+            Ok(false) => {}
+        }
     }
+}
+
+fn cautare_fisier(
+    path: &Path,
+    sir_cautat: &str,
+    count: bool,
+    ignore: bool,
+    max_linii: usize,
+    regex: bool,
+) -> io::Result<bool> {
+    let mut file = File::open(path)?;
+    let mut continut_fisier = String::new();
+    file.read_to_string(&mut continut_fisier)?;
+
+    let mut counter = 0;
+    //Fac o copie pt a afisa continutul original in cazul in care ignore == true
+    let copie_continut = continut_fisier.clone();
+    let sir;
+
+    // Daca ignore e true fac textul cautat si cel din fisier sa contina doar minuscule
+    if ignore {
+        sir = sir_cautat.to_lowercase();
+        continut_fisier = continut_fisier.to_lowercase();
+    } else {
+        sir = sir_cautat.to_string();
+    }
+
+    // Folosesc aceasta variabila pentru a nu afisa aceiasi linie de mai multe ori in cazul in care cuvantul cautat se gaseste de mai multe ori pe aceiasi linie
+    let mut linie_afisata;
+
+    let mut raspuns = false;
+    if regex {
+        let sir_regex = match Regex::new(&sir) {
+            Ok(regex) => regex,
+            Err(err) => {
+                eprintln!("Eroare la compilarea regex: {}", err);
+                return Ok(false);
+            }
+        };
+        for (linie, continut_linie) in continut_fisier.lines().enumerate() {
+            if max_linii < linie + 1 {
+                break;
+            }
+
+            let mut stanga: usize = 0;
+            let mut dreapta: usize = continut_linie.len();
+
+            if sir_regex.is_match(continut_linie) {
+                let pozitie = if let Some(gasit) = sir_regex.find(continut_linie) {
+                    gasit.start()
+                } else {
+                    continue;
+                };
+                if !raspuns {
+                    // println!("Fisierul: {:?}", path.file_name().unwrap_or_default());
+                    println!("{}", path.display());
+                    raspuns = true;
+                }
+                if continut_linie.len() > LUNGIME_MAX_LINIE {
+                    if pozitie < JUM_LUNGIME {
+                        stanga = 0;
+                    } else {
+                        stanga = pozitie - JUM_LUNGIME;
+                    }
+                    if pozitie > continut_linie.len() - JUM_LUNGIME {
+                        dreapta = continut_linie.len();
+                    } else {
+                        dreapta = pozitie + JUM_LUNGIME;
+                    }
+                }
+
+                if count {
+                    counter += sir_regex.find_iter(continut_linie).count();
+                } else if ignore {
+                    if let Some(continut_linie) = copie_continut.lines().nth(linie) {
+                        println!("{}: {}", linie + 1, &continut_linie[stanga..dreapta]);
+                    } else {
+                        println!("Indexul liniei depaseste numarul total de linii.");
+                    }
+                } else {
+                    println!("{}: {}", linie + 1, &continut_linie[stanga..dreapta]);
+                }
+            }
+        }
+    } else {
+        // Folosesc alg Boyer-Moore pentru cautare
+
+        let m = sir.len();
+        let mut skip = vec![m; 256];
+
+        let mut i = 0;
+        while i < m - 1 {
+            let caracter = sir.as_bytes()[i];
+            skip[caracter as usize] = m - 1 - i;
+            i += 1;
+        }
+        for (linie, continut_linie) in continut_fisier.lines().enumerate() {
+            if max_linii < linie + 1 {
+                break;
+            }
+            linie_afisata = false;
+            let mut stanga = 0;
+            let mut dreapta = continut_linie.len();
+            let n = continut_linie.len();
+            let mut i = m - 1;
+            while i < n {
+                let mut j = m - 1;
+                let mut k = i;
+                while j > 0 && continut_linie.as_bytes()[k] == sir.as_bytes()[j] {
+                    j -= 1;
+                    k -= 1;
+                }
+
+                if continut_linie.as_bytes()[k] == sir.as_bytes()[j] && j == 0 {
+                    if !raspuns {
+                        // println!("Fisierul: {:?}", path.file_name().unwrap_or_default());
+                        println!("{}", path.display());
+                        raspuns = true;
+                    }
+
+                    if continut_linie.len() > LUNGIME_MAX_LINIE {
+                        if i < JUM_LUNGIME {
+                            stanga = 0;
+                        } else {
+                            stanga = i - JUM_LUNGIME;
+                        }
+                        if i > continut_linie.len() - JUM_LUNGIME {
+                            dreapta = continut_linie.len();
+                        } else {
+                            dreapta = i + JUM_LUNGIME;
+                        }
+                    }
+                    if count {
+                        counter += 1;
+                    } else if ignore && !linie_afisata {
+                        if let Some(continut_linie) = copie_continut.lines().nth(linie) {
+                            println!("{}: {}", linie + 1, &continut_linie[stanga..dreapta]);
+                        } else {
+                            println!("Indexul liniei depășește numărul total de linii.");
+                        }
+                    } else if !linie_afisata {
+                        println!("{}: {}", linie + 1, &continut_linie[stanga..dreapta]);
+                    }
+                    linie_afisata = true;
+                }
+
+                i += skip[continut_linie.as_bytes()[i] as usize];
+            }
+        }
+    }
+    if counter > 0 {
+        println!("{}", counter);
+    }
+    Ok(raspuns)
 }
 
 fn main() {
     let argumente: Vec<String> = env::args().collect();
     if argumente.len() < 3 {
-        eprintln!("Format acceptat: {} <adresa_director> <sir_cautat> [-count] [-ignore] [-max:numarul maxim de linii analizate] [-regex]", argumente[0]);
-        std::process::exit(1);
+        if argumente.len() == 2 && argumente[1] == "help" {
+            ajutor();
+            std::process::exit(0);
+        } else {
+            eprintln!(
+                "Numar insuficient de argumente. Rulare cu 'help' pentru mai multe informatii."
+            );
+            std::process::exit(1);
+        }
     }
+
     let mut rezultat = false;
 
     let director = Path::new(&argumente[1]);
+
+    if !director.exists() {
+        eprintln!("Calea nu exista.");
+        std::process::exit(1);
+    }
+
     let sir_cautat = &argumente[2];
     let mut max_linii = usize::MAX;
     let mut count = false;
     let mut ignore = false;
     let mut regex = false;
 
-    // println!("Adresa: {}, sirul {}", director.display(), sir_cautat);
     let mut i = 3;
     while i < argumente.len() {
         let optiune = &argumente[i];
@@ -185,7 +275,7 @@ fn main() {
                     if let Ok(numar) = argumente[i].parse::<usize>() {
                         max_linii = numar;
                     } else {
-                        eprintln!("Valoarea de dupa -max nu este un numar.\nFormat acceptat: {} <adresa_directot> <sir_cautat> [-count] [-ignore] [-max : numarul maxim de linii analizate] [-regex]",argumente[0]);
+                        eprintln!("Valoarea de dupa -max nu este un numar.\nFormat acceptat: {} <adresa_directot/fisier> <sir_cautat> [-count] [-ignore] [-max : numarul maxim de linii analizate] [-regex]",argumente[0]);
                         std::process::exit(2);
                     }
                 } else {
@@ -194,13 +284,12 @@ fn main() {
                 }
             }
             _ => {
-                eprintln!("Format acceptat: {} <adresa_director> <sir_cautat> [-count] [-ignore] [-max : numarul maxim de linii analizate] [-regex]", argumente[0]);
+                eprintln!("Format acceptat: {} <adresa_director/fisier> <sir_cautat> [-count] [-ignore] [-max : numarul maxim de linii analizate] [-regex].\n Rulare cu 'help' pentru mai multe informatii.", argumente[0]);
                 std::process::exit(1);
             }
         }
         i += 1;
     }
-    // println!("{max_linii}");
     parcurgere_recursiva(
         director,
         sir_cautat,
